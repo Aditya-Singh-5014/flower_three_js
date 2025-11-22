@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cyberpunk Rose v5.0 — Hyper-Accurate</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: radial-gradient(circle at center, #080010 0%, #000000 70%);
+            font-family: "Courier New", monospace;
+        }
+        canvas {
+            display: block;
+            cursor: grab;
+        }
+        canvas:active {
+            cursor: grabbing;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #ff0033;
+            text-shadow: 0 0 10px #ff0033;
+            pointer-events: none;
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 15px 18px;
+            border: 1px solid #ff0033;
+            border-radius: 6px;
+            box-shadow: 0 0 15px rgba(255, 0, 51, 0.3);
+            backdrop-filter: blur(6px);
+        }
+        h1 {
+            font-size: 1.2rem;
+            letter-spacing: 3px;
+            margin: 0 0 10px;
+            text-transform: uppercase;
+            border-bottom: 2px solid #ff0033;
+            display: inline-block;
+            padding-bottom: 4px;
+        }
+        #error-log {
+            margin-top: 10px;
+            color: #ffff00;
+            white-space: pre-wrap;
+            display: none;
+        }
+        #love-message {
+            margin-top: 12px;
+            font-size: 0.8rem;
+            color: #ff66ff;
+            text-shadow: 0 0 8px #ff00ff, 0 0 18px #00ffff;
+            letter-spacing: 1px;
+            min-height: 3.6em;
+            animation: cyberPulse 2.2s infinite alternate;
+        }
+        @keyframes cyberPulse {
+            0% { opacity: 0.7; filter: drop-shadow(0 0 4px #ff00ff); }
+            50% { opacity: 1; filter: drop-shadow(0 0 10px #00ffff); }
+            100% { opacity: 0.8; filter: drop-shadow(0 0 6px #ff00ff); }
+        }
+    </style>
+
+    <!-- Import Map -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script>
+        window.onerror = function (msg) {
+            const log = document.getElementById("error-log");
+            log.style.display = "block";
+            log.textContent += `ERROR: ${msg}
+`;
+        };
+    </script>
+</head>
+<body>
+    <div id="ui">
+        <div id="love-message"></div>
+        <div id="error-log"></div>
+    </div>
+
+    <script type="module">
+        import * as THREE from "three";
+        import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+        import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+        import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+        import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+
+        // ───────────────── CONFIG ─────────────────
+        const COLORS = {
+            rose: 0xff2b6b,
+            stem: 0x00c94a,
+            leaf: 0x00ff88,
+            bg: 0x020008,
+        };
+
+        // cyberpunk love intro for Diva
+        const loveLines = [
+            "hi diva,",
+            "i love you and this is a small rose from me to you.",
+            "i would have coded tulips but it was hard to code so i coded this for you.",
+            "i love you"
+        ];
+
+        const loveEl = document.getElementById("love-message");
+
+        function typeLines(el, lines, lineIndex = 0) {
+            if (!el || lineIndex >= lines.length) return;
+            const text = lines[lineIndex];
+            let charIndex = 0;
+            el.textContent = "";
+
+            function typeChar() {
+                if (charIndex <= text.length) {
+                    el.textContent = text.slice(0, charIndex);
+                    charIndex++;
+                    setTimeout(typeChar, 55);
+                } else {
+                    setTimeout(() => typeLines(el, lines, lineIndex + 1), 900);
+                }
+            }
+
+            typeChar();
+        }
+
+        if (loveEl) {
+            typeLines(loveEl, loveLines);
+        }
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(COLORS.bg);
+        scene.fog = new THREE.FogExp2(0x000000, 0.02);
+
+        const camera = new THREE.PerspectiveCamera(
+            45,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            200
+        );
+        camera.position.set(0, 4, 18);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.target.set(0, 2.5, 0);
+
+        // Neon-style lights for cyberpunk feel
+        const ambient = new THREE.AmbientLight(0x552244, 0.9);
+        scene.add(ambient);
+        const keyLight = new THREE.PointLight(0xff2277, 1.4, 60);
+        keyLight.position.set(10, 12, 10);
+        scene.add(keyLight);
+        const rimLight = new THREE.PointLight(0x00f0ff, 1.0, 50);
+        rimLight.position.set(-10, 8, -8);
+        scene.add(rimLight);
+
+        // ───────────────── PETAL GEOMETRY ─────────────────
+        // Petal: wide rounded base, bulging mid, narrow curled tip with cupping
+        function rosePetal(u, v, target) {
+            // u: width (0..1), v: height (0..1)
+            const angle = (u - 0.5) * Math.PI * 1.8;
+            const r = v;
+
+            const mid = Math.sin(Math.min(v * 1.1, 1) * Math.PI);
+            const widthProfile = 0.9 + 0.4 * mid - 0.25 * v; // base/mid wide, tip narrow
+
+            let x = Math.sin(angle) * widthProfile * r;
+            let y = Math.pow(v, 0.85) * 3.1;
+            let z = Math.cos(angle) * widthProfile * r;
+
+            // Small heart-like notch at base
+            if (v < 0.25) {
+                y -= (0.25 - v) * 0.4 * (1 - Math.abs(u - 0.5) * 3.0);
+            }
+
+            // Cup inward
+            const cup = (1 - v) * (1 - v) * 1.4;
+            z += cup;
+
+            // Curl tip backwards and upward
+            const tip = v * v * v;
+            x += tip * 0.25;
+            y += tip * 0.45;
+            z -= tip * 0.9;
+
+            target.set(x, y, z);
+        }
+
+        function buildPetalGeometry() {
+            const geo = new THREE.BufferGeometry();
+            const uSegs = 40;
+            const vSegs = 40;
+            const verts = [];
+            const temp = new THREE.Vector3();
+
+            for (let i = 0; i <= vSegs; i++) {
+                for (let j = 0; j <= uSegs; j++) {
+                    const u = j / uSegs;
+                    const v = i / vSegs;
+                    rosePetal(u, v, temp);
+                    verts.push(temp.x, temp.y, temp.z);
+                }
+            }
+
+            const indices = [];
+            for (let i = 0; i < vSegs; i++) {
+                for (let j = 0; j < uSegs; j++) {
+                    const a = i * (uSegs + 1) + j;
+                    const b = a + 1;
+                    const c = a + (uSegs + 1);
+                    const d = c + 1;
+                    indices.push(a, b, d, a, d, c);
+                }
+            }
+
+            geo.setIndex(indices);
+            geo.setAttribute(
+                "position",
+                new THREE.Float32BufferAttribute(verts, 3)
+            );
+            geo.computeVertexNormals();
+            return geo;
+        }
+
+        // ───────────────── MATERIALS ─────────────────
+        const petalMat = new THREE.MeshStandardMaterial({
+            color: COLORS.rose,
+            emissive: 0xff1c5a,
+            emissiveIntensity: 1.0,
+            metalness: 0.2,
+            roughness: 0.35,
+            side: THREE.DoubleSide,
+        });
+
+        const stemMat = new THREE.MeshStandardMaterial({
+            color: COLORS.stem,
+            emissive: 0x008833,
+            emissiveIntensity: 0.5,
+            metalness: 0.15,
+            roughness: 0.7,
+            side: THREE.DoubleSide,
+        });
+
+        const leafMat = new THREE.MeshStandardMaterial({
+            color: COLORS.leaf,
+            emissive: 0x008844,
+            emissiveIntensity: 0.6,
+            metalness: 0.15,
+            roughness: 0.6,
+            side: THREE.DoubleSide,
+        });
+
+        // ───────────────── BUILD ROSE ─────────────────
+        const petalGeo = buildPetalGeometry();
+        const roseRoot = new THREE.Group();
+        const bloom = new THREE.Group();
+        roseRoot.add(bloom);
+
+        function addPetalRing(count, radius, baseHeight, baseTilt, baseScale) {
+            for (let i = 0; i < count; i++) {
+                const angle = (i / count) * Math.PI * 2;
+                const p = new THREE.Mesh(petalGeo, petalMat);
+
+                const randR = radius * (0.92 + Math.random() * 0.15);
+                const randH = baseHeight + (Math.random() - 0.5) * 0.1;
+
+                p.position.set(Math.cos(angle) * randR, randH, Math.sin(angle) * randR);
+
+                p.lookAt(0, baseHeight + 1.3, 0);
+                p.rotateY(Math.PI);
+
+                p.rotateX(baseTilt + (Math.random() - 0.5) * 0.3);
+                p.rotateZ((Math.random() - 0.5) * 0.25);
+
+                const s = baseScale * (0.9 + Math.random() * 0.2);
+                p.scale.set(s, s, s);
+
+                bloom.add(p);
+            }
+        }
+
+        function addBud(count) {
+            for (let i = 0; i < count; i++) {
+                const t = i / count;
+                const angle = t * Math.PI * 4.2;
+                const radius = 0.05 + t * 0.18;
+                const height = 0.3 + t * 0.55;
+
+                const p = new THREE.Mesh(petalGeo, petalMat);
+                const s = 0.4 + t * 0.25;
+                p.scale.set(s, s, s);
+
+                p.position.set(
+                    Math.cos(angle) * radius,
+                    height,
+                    Math.sin(angle) * radius
+                );
+                p.lookAt(0, height + 0.8, 0);
+                p.rotateY(Math.PI);
+                p.rotateX(-0.25 + t * 0.6);
+
+                bloom.add(p);
+            }
+        }
+
+        // Build full head
+        addBud(18);
+        addPetalRing(10, 0.35, 0.9, -0.35, 0.9);
+        addPetalRing(14, 0.8, 1.25, 0.0, 1.05);
+        addPetalRing(18, 1.25, 1.6, 0.55, 1.15);
+        addPetalRing(22, 1.6, 1.95, 0.9, 1.25);
+
+        // ───────────────── SEPALS ─────────────────
+        function createSepalGeometry() {
+            const shape = new THREE.Shape();
+            shape.moveTo(0, 0);
+            shape.lineTo(0.25, 0.4);
+            shape.lineTo(0.02, 1.8);
+            shape.lineTo(-0.25, 0.4);
+            shape.lineTo(0, 0);
+            const geo = new THREE.ShapeGeometry(shape, 8);
+
+            const pos = geo.attributes.position;
+            for (let i = 0; i < pos.count; i++) {
+                const y = pos.getY(i);
+                const z = pos.getZ(i);
+                pos.setZ(i, z + y * y * 0.12);
+            }
+            pos.needsUpdate = true;
+            geo.computeVertexNormals();
+            return geo;
+        }
+
+        const sepalGeo = createSepalGeometry();
+        for (let i = 0; i < 5; i++) {
+            const angle = (i / 5) * Math.PI * 2;
+            const s = new THREE.Mesh(sepalGeo, stemMat);
+            s.position.set(Math.cos(angle) * 0.55, 0.7, Math.sin(angle) * 0.55);
+            s.rotation.set(-Math.PI * 0.85, angle, 0);
+            bloom.add(s);
+        }
+
+        // ───────────────── STEM ─────────────────
+        const stemCurve = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(0, 0.7, 0),
+            new THREE.Vector3(0.12, -1.4, 0.2),
+            new THREE.Vector3(-0.22, -3.8, -0.1),
+            new THREE.Vector3(0.12, -6.7, 0.18),
+            new THREE.Vector3(0, -9.2, 0),
+        ]);
+        const stemGeo = new THREE.TubeGeometry(stemCurve, 40, 0.09, 8, false);
+        const stem = new THREE.Mesh(stemGeo, stemMat);
+        roseRoot.add(stem);
+
+        // ───────────────── ROSE LEAF CLUSTERS ─────────────────
+        function createLeafGeometry() {
+            const shape = new THREE.Shape();
+            shape.moveTo(0, 0);
+            shape.bezierCurveTo(0.7, 0.8, 1.0, 2.0, 0, 3.4);
+            shape.bezierCurveTo(-1.0, 2.0, -0.7, 0.8, 0, 0);
+            const geo = new THREE.ShapeGeometry(shape, 16);
+
+            const pos = geo.attributes.position;
+            for (let i = 0; i < pos.count; i++) {
+                const x = pos.getX(i);
+                const z = Math.abs(x) * 0.35;
+                pos.setZ(i, z);
+            }
+            pos.needsUpdate = true;
+            geo.computeVertexNormals();
+            return geo;
+        }
+
+        const leafGeo = createLeafGeometry();
+
+        function addLeafCluster(t, side = 1) {
+            const cluster = new THREE.Group();
+            const stemPos = stemCurve.getPoint(t);
+            cluster.position.copy(stemPos);
+
+            cluster.rotation.y = side > 0 ? Math.PI / 3 : -Math.PI / 3;
+            cluster.rotation.x = Math.PI / 2.6;
+
+            const centerLeaf = new THREE.Mesh(leafGeo, leafMat);
+            centerLeaf.scale.setScalar(0.9);
+            centerLeaf.position.y = 0.0;
+            cluster.add(centerLeaf);
+
+            const leftLeaf = new THREE.Mesh(leafGeo, leafMat);
+            leftLeaf.scale.setScalar(0.65);
+            leftLeaf.position.set(-0.7, -0.2, 0);
+            leftLeaf.rotation.z = 0.4;
+            cluster.add(leftLeaf);
+
+            const rightLeaf = new THREE.Mesh(leafGeo, leafMat);
+            rightLeaf.scale.setScalar(0.65);
+            rightLeaf.position.set(0.7, -0.2, 0);
+            rightLeaf.rotation.z = -0.4;
+            cluster.add(rightLeaf);
+
+            roseRoot.add(cluster);
+        }
+
+        addLeafCluster(0.36, 1);
+        addLeafCluster(0.55, -1);
+
+        // Raise bloom so stem base isn't cut off
+        bloom.position.y = 1.5;
+        roseRoot.position.y = 1.5;
+        scene.add(roseRoot);
+
+        // ───────────────── POSTPROCESS (BLOOM) ─────────────────
+        const composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+
+        const bloomPass = new UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            1.6,
+            0.4,
+            0.12
+        );
+        composer.addPass(bloomPass);
+
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const t = clock.getElapsedTime();
+
+            controls.update();
+            roseRoot.rotation.y = t * 0.15;
+            bloomPass.strength = 1.4 + Math.sin(t * 1.4) * 0.35;
+
+            composer.render();
+        }
+        animate();
+
+        window.addEventListener("resize", () => {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+            renderer.setSize(w, h);
+            composer.setSize(w, h);
+        });
+    </script>
+</body>
+</html>
